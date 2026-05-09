@@ -265,8 +265,8 @@ git push origin feature/new-suggestion-rule
 
 | Person | Responsibility |
 |--------|---------------|
-| [@friend] | C++ engine, compiler wrapper, performance measurement |
-| [@you] | Python backend, React frontend, deployment |
+| [@SaianPrince] | C++ engine, compiler wrapper, performance measurement |
+| [@Imaliure] | Python backend, React frontend, deployment |
 
 ### License
 
