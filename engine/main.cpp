@@ -4,24 +4,25 @@
 #include <vector>
 #include <chrono>
 #include <memory>
-#include <stdexcept>
-
-#ifdef _WIN32
-#define POPEN _popen
-#define PCLOSE _pclose
-#else
-#define POPEN popen
-#define PCLOSE pclose
-#endif
+// Windows Kernel headers for CreateProcess and Memory Info
+#include <windows.h>
+#include <psapi.h>
 
 using namespace std;
 using namespace std::chrono;
 
-// Helper struct to store results for each optimization level
+struct ProcessResult {
+    string output;
+    int exitCode;
+    long long runTimeMs;
+    SIZE_T peakMemoryKb; // Sadece Bellek eklendi
+};
+
 struct OptimizationResult {
     string level;
     long long compileTimeMs;
     long long runTimeMs;
+    SIZE_T peakMemoryKb;
     bool success;
     string errorMessage;
 };
@@ -34,19 +35,60 @@ bool writeCodeToFile(const string& filename, const string& code) {
     return true;
 }
 
-string executeCommand(const string& command, int& exitCode) {
-    string result = "";
-    char buffer[128];
-    string fullCommand = command + " 2>&1";
-    FILE* pipe = POPEN(fullCommand.c_str(), "r");
+// Windows API Process Execution (Saf 1.3)
+ProcessResult executeAndMeasure(const string& command) {
+    ProcessResult result = { "", -1, 0, 0 };
 
-    if (!pipe) throw runtime_error("Failed to run command");
+    HANDLE hReadPipe, hWritePipe;
+    SECURITY_ATTRIBUTES saAttr = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
+    if (!CreatePipe(&hReadPipe, &hWritePipe, &saAttr, 0)) return result;
+    SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
 
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
+    STARTUPINFOA si = { sizeof(STARTUPINFOA) };
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = hWritePipe;
+    si.hStdError = hWritePipe;
+
+    PROCESS_INFORMATION pi;
+    char cmd[512];
+    strncpy(cmd, command.c_str(), sizeof(cmd));
+
+    auto start = high_resolution_clock::now();
+
+    // Programi baslat
+    if (CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+        CloseHandle(hWritePipe);
+
+        char buffer[4096];
+        DWORD bytesRead;
+        while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead != 0) {
+            buffer[bytesRead] = '\0';
+            result.output += buffer;
+        }
+
+        // Programin bitmesini sonsuza kadar bekle (Guvenlik 1.4'te eklenecek)
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        auto end = high_resolution_clock::now();
+        result.runTimeMs = duration_cast<milliseconds>(end - start).count();
+
+        DWORD exitCode;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        result.exitCode = exitCode;
+
+        // --- PHASE 1.3: MEMORY MEASUREMENT ---
+        PROCESS_MEMORY_COUNTERS pmc;
+        if (GetProcessMemoryInfo(pi.hProcess, &pmc, sizeof(pmc))) {
+            result.peakMemoryKb = pmc.PeakWorkingSetSize / 1024;
+        }
+
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+    else {
+        CloseHandle(hWritePipe);
     }
 
-    exitCode = PCLOSE(pipe);
+    CloseHandle(hReadPipe);
     return result;
 }
 
@@ -68,23 +110,16 @@ string escapeJsonString(const string& input) {
 }
 
 int main() {
-    // A heavier CPU task to clearly see the difference between O0 and O3
+    // RAM yiyecek 40MB'lik test kodu
     string sampleUserCode =
         "#include <iostream>\n"
+        "#include <vector>\n"
         "using namespace std;\n"
-        "bool isPrime(int n) {\n"
-        "    if (n <= 1) return false;\n"
-        "    for (int i = 2; i * i <= n; i++) {\n"
-        "        if (n % i == 0) return false;\n"
-        "    }\n"
-        "    return true;\n"
-        "}\n"
         "int main() {\n"
-        "    int count = 0;\n"
-        "    for(int i=2; i<500000; i++) {\n"
-        "        if (isPrime(i)) count++;\n"
-        "    }\n"
-        "    cout << \"Found \" << count << \" primes.\" << endl;\n"
+        "    vector<int> bigArray(10000000, 42);\n"
+        "    long long sum = 0;\n"
+        "    for(int num : bigArray) sum += num;\n"
+        "    cout << \"Calculation Complete, Sum: \" << sum << endl;\n"
         "    return 0;\n"
         "}\n";
 
@@ -95,55 +130,43 @@ int main() {
         return 1;
     }
 
-    // List of optimization levels to test
     vector<string> optLevels = { "-O0", "-O1", "-O2", "-O3" };
     vector<OptimizationResult> results;
 
     string finalStdout = "";
     int finalExitCode = 0;
 
-    // Loop through each optimization level
     for (const string& opt : optLevels) {
         OptimizationResult res;
         res.level = opt;
 
-        string exeFile = "temp_" + opt.substr(1) + ".exe"; // e.g., temp_O0.exe
+        string exeFile = "temp_" + opt.substr(1) + ".exe";
         string compileCommand = "g++ " + opt + " " + sourceFile + " -o " + exeFile;
-        int compileExitCode = 0;
 
-        // 1. Measure Compilation
-        auto compileStart = high_resolution_clock::now();
-        string compileOutput = executeCommand(compileCommand, compileExitCode);
-        auto compileEnd = high_resolution_clock::now();
-        res.compileTimeMs = duration_cast<milliseconds>(compileEnd - compileStart).count();
+        ProcessResult compRes = executeAndMeasure(compileCommand);
+        res.compileTimeMs = compRes.runTimeMs;
 
-        if (compileExitCode != 0) {
+        if (compRes.exitCode != 0) {
             res.success = false;
-            res.errorMessage = compileOutput;
+            res.errorMessage = compRes.output;
             results.push_back(res);
-            continue; // Skip running if compilation failed
+            continue;
         }
 
-        // 2. Measure Execution
-        int runExitCode = 0;
-        auto runStart = high_resolution_clock::now();
-        string runOutput = executeCommand(exeFile, runExitCode);
-        auto runEnd = high_resolution_clock::now();
-        res.runTimeMs = duration_cast<milliseconds>(runEnd - runStart).count();
-
+        ProcessResult runRes = executeAndMeasure(exeFile);
+        res.runTimeMs = runRes.runTimeMs;
+        res.peakMemoryKb = runRes.peakMemoryKb; // YENI
         res.success = true;
         res.errorMessage = "";
 
-        // Save stdout from the first successful run (O0) to return to frontend
         if (opt == "-O0") {
-            finalStdout = runOutput;
-            finalExitCode = runExitCode;
+            finalStdout = runRes.output;
+            finalExitCode = runRes.exitCode;
         }
 
         results.push_back(res);
     }
 
-    // Step 3: Print the aggregated JSON response
     cout << "{\n";
     cout << "  \"status\": \"success\",\n";
     cout << "  \"optimizations\": [\n";
@@ -154,7 +177,8 @@ int main() {
         if (results[i].success) {
             cout << "      \"status\": \"success\",\n";
             cout << "      \"compile_time_ms\": " << results[i].compileTimeMs << ",\n";
-            cout << "      \"run_time_ms\": " << results[i].runTimeMs << "\n";
+            cout << "      \"run_time_ms\": " << results[i].runTimeMs << ",\n";
+            cout << "      \"memory_kb\": " << results[i].peakMemoryKb << "\n";
         }
         else {
             cout << "      \"status\": \"error\",\n";
