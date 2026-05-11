@@ -11,7 +11,7 @@ using namespace std::chrono;
 
 struct ProcessResult {
     string output;
-    DWORD exitCode; // ERROR FIX: Changed int to DWORD for Windows API compatibility
+    DWORD exitCode; // Fixed type for Windows API compatibility
     long long runTimeMs;
     SIZE_T peakMemoryKb;
     bool isTimeout;
@@ -31,8 +31,8 @@ bool isCodeSafe(const string& code) {
     vector<string> blacklist = {
         "system(", "exec(", "_popen", "CreateProcess", "ShellExecute", "remove(", "rename("
     };
-    for (const string& badWord : blacklist) {
-        if (code.find(badWord) != string::npos) {
+    for (const string& keyword : blacklist) {
+        if (code.find(keyword) != string::npos) {
             return false;
         }
     }
@@ -69,9 +69,9 @@ ProcessResult executeAndMeasure(const string& command, DWORD timeoutMs = INFINIT
     if (CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
         CloseHandle(hWritePipe);
 
-        bool running = true;
-        while (running) {
-            // 1. Boruda veri var mý diye kontrol et (Peek)
+        bool isRunning = true;
+        while (isRunning) {
+            // 1. Check if there is data in the pipe (Peek)
             DWORD bytesAvailable = 0;
             PeekNamedPipe(hReadPipe, NULL, 0, NULL, &bytesAvailable, NULL);
 
@@ -84,7 +84,7 @@ ProcessResult executeAndMeasure(const string& command, DWORD timeoutMs = INFINIT
                 }
             }
 
-            // 2. Süre doldu mu kontrol et
+            // 2. Check for timeout
             auto now = high_resolution_clock::now();
             long long elapsed = duration_cast<milliseconds>(now - start).count();
 
@@ -92,16 +92,17 @@ ProcessResult executeAndMeasure(const string& command, DWORD timeoutMs = INFINIT
                 TerminateProcess(pi.hProcess, 1);
                 result.isTimeout = true;
                 result.exitCode = -1;
-                running = false;
+                isRunning = false;
             }
 
-            // 3. Program bitti mi kontrol et
-            DWORD waitStatus = WaitForSingleObject(pi.hProcess, 0); // 0 yazarak "bekleme, sadece bak" diyoruz
+            // 3. Check if the program has finished
+            // Using 0 means "don't wait, just check the current status"
+            DWORD waitStatus = WaitForSingleObject(pi.hProcess, 0); 
             if (waitStatus != WAIT_TIMEOUT) {
-                running = false;
+                isRunning = false;
             }
 
-            // Ýþlemciyi yormamak için çok kýsa uyu
+            // Sleep shortly to avoid 100% CPU usage
             Sleep(10);
         }
 
@@ -128,7 +129,6 @@ ProcessResult executeAndMeasure(const string& command, DWORD timeoutMs = INFINIT
     return result;
 }
 
-
 string escapeJsonString(const string& input) {
     string output;
     for (char c : input) {
@@ -153,82 +153,4 @@ int main() {
         "    cout << \"Loop starting...\" << endl;\n"
         "    while(true) {} \n"
         "    return 0;\n"
-        "}\n";
-
-    if (!isCodeSafe(sampleUserCode)) {
-        cout << "{\n  \"status\": \"error\",\n  \"message\": \"Security Violation detected!\"\n}" << endl;
-        return 0;
-    }
-
-    string sourceFile = "temp_code.cpp";
-    writeCodeToFile(sourceFile, sampleUserCode);
-
-    vector<string> optLevels = { "-O0", "-O1", "-O2", "-O3" };
-    vector<OptimizationResult> results;
-
-    string finalStdout = "";
-    DWORD finalExitCode = 0;
-
-    for (const string& opt : optLevels) {
-        OptimizationResult res;
-        res.level = opt;
-        string exeFile = "temp_" + opt.substr(1) + ".exe";
-        string compileCommand = "g++ " + opt + " " + sourceFile + " -o " + exeFile;
-
-        ProcessResult compRes = executeAndMeasure(compileCommand, INFINITE);
-        res.compileTimeMs = compRes.runTimeMs;
-
-        if (compRes.exitCode != 0) {
-            res.success = false;
-            res.errorMessage = compRes.output;
-            results.push_back(res);
-            continue;
-        }
-
-        // Running user code with a 5-second (5000ms) safety limit
-        ProcessResult runRes = executeAndMeasure(exeFile, 5000);
-        res.runTimeMs = runRes.runTimeMs;
-        res.peakMemoryKb = runRes.peakMemoryKb;
-
-        if (runRes.isTimeout) {
-            res.success = false;
-            res.errorMessage = "Time Limit Exceeded (>5000 ms)";
-        }
-        else {
-            res.success = true;
-            res.errorMessage = "";
-            if (opt == "-O0") {
-                finalStdout = runRes.output;
-                finalExitCode = runRes.exitCode;
-            }
-        }
-        results.push_back(res);
-    }
-
-    // Print JSON Output
-    cout << "{\n";
-    cout << "  \"status\": \"success\",\n";
-    cout << "  \"optimizations\": [\n";
-    for (size_t i = 0; i < results.size(); ++i) {
-        cout << "    {\n";
-        cout << "      \"level\": \"" << results[i].level << "\",\n";
-        if (results[i].success) {
-            cout << "      \"status\": \"success\",\n";
-            cout << "      \"compile_time_ms\": " << results[i].compileTimeMs << ",\n";
-            cout << "      \"run_time_ms\": " << results[i].runTimeMs << ",\n";
-            cout << "      \"memory_kb\": " << results[i].peakMemoryKb << "\n";
-        }
-        else {
-            cout << "      \"status\": \"error\",\n";
-            cout << "      \"compile_time_ms\": " << results[i].compileTimeMs << ",\n";
-            cout << "      \"error_message\": \"" << escapeJsonString(results[i].errorMessage) << "\"\n";
-        }
-        cout << "    }" << (i == results.size() - 1 ? "" : ",") << "\n";
-    }
-    cout << "  ],\n";
-    cout << "  \"stdout\": \"" << escapeJsonString(finalStdout) << "\",\n";
-    cout << "  \"exit_code\": " << finalExitCode << "\n";
-    cout << "}\n";
-
-    return 0;
-}
+        "}\
