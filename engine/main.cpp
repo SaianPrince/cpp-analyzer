@@ -3,8 +3,6 @@
 #include <string>
 #include <vector>
 #include <chrono>
-#include <memory>
-// Windows Kernel headers for CreateProcess and Memory Info
 #include <windows.h>
 #include <psapi.h>
 
@@ -13,9 +11,10 @@ using namespace std::chrono;
 
 struct ProcessResult {
     string output;
-    int exitCode;
+    DWORD exitCode; // ERROR FIX: Changed int to DWORD for Windows API compatibility
     long long runTimeMs;
-    SIZE_T peakMemoryKb; // Sadece Bellek eklendi
+    SIZE_T peakMemoryKb;
+    bool isTimeout;
 };
 
 struct OptimizationResult {
@@ -27,6 +26,19 @@ struct OptimizationResult {
     string errorMessage;
 };
 
+// Phase 1.4: Security Blacklist
+bool isCodeSafe(const string& code) {
+    vector<string> blacklist = {
+        "system(", "exec(", "_popen", "CreateProcess", "ShellExecute", "remove(", "rename("
+    };
+    for (const string& badWord : blacklist) {
+        if (code.find(badWord) != string::npos) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool writeCodeToFile(const string& filename, const string& code) {
     ofstream file(filename);
     if (!file.is_open()) return false;
@@ -35,9 +47,8 @@ bool writeCodeToFile(const string& filename, const string& code) {
     return true;
 }
 
-// Windows API Process Execution (Saf 1.3)
-ProcessResult executeAndMeasure(const string& command) {
-    ProcessResult result = { "", -1, 0, 0 };
+ProcessResult executeAndMeasure(const string& command, DWORD timeoutMs = INFINITE) {
+    ProcessResult result = { "", 0, 0, 0, false };
 
     HANDLE hReadPipe, hWritePipe;
     SECURITY_ATTRIBUTES saAttr = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
@@ -55,27 +66,52 @@ ProcessResult executeAndMeasure(const string& command) {
 
     auto start = high_resolution_clock::now();
 
-    // Programi baslat
     if (CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
         CloseHandle(hWritePipe);
 
-        char buffer[4096];
-        DWORD bytesRead;
-        while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead != 0) {
-            buffer[bytesRead] = '\0';
-            result.output += buffer;
+        bool running = true;
+        while (running) {
+            // 1. Boruda veri var mý diye kontrol et (Peek)
+            DWORD bytesAvailable = 0;
+            PeekNamedPipe(hReadPipe, NULL, 0, NULL, &bytesAvailable, NULL);
+
+            if (bytesAvailable > 0) {
+                char buffer[4096];
+                DWORD bytesRead;
+                if (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead != 0) {
+                    buffer[bytesRead] = '\0';
+                    result.output += buffer;
+                }
+            }
+
+            // 2. Süre doldu mu kontrol et
+            auto now = high_resolution_clock::now();
+            long long elapsed = duration_cast<milliseconds>(now - start).count();
+
+            if (timeoutMs != INFINITE && elapsed > timeoutMs) {
+                TerminateProcess(pi.hProcess, 1);
+                result.isTimeout = true;
+                result.exitCode = -1;
+                running = false;
+            }
+
+            // 3. Program bitti mi kontrol et
+            DWORD waitStatus = WaitForSingleObject(pi.hProcess, 0); // 0 yazarak "bekleme, sadece bak" diyoruz
+            if (waitStatus != WAIT_TIMEOUT) {
+                running = false;
+            }
+
+            // Ýþlemciyi yormamak için çok kýsa uyu
+            Sleep(10);
         }
 
-        // Programin bitmesini sonsuza kadar bekle (Guvenlik 1.4'te eklenecek)
-        WaitForSingleObject(pi.hProcess, INFINITE);
+        if (!result.isTimeout) {
+            GetExitCodeProcess(pi.hProcess, &result.exitCode);
+        }
+
         auto end = high_resolution_clock::now();
         result.runTimeMs = duration_cast<milliseconds>(end - start).count();
 
-        DWORD exitCode;
-        GetExitCodeProcess(pi.hProcess, &exitCode);
-        result.exitCode = exitCode;
-
-        // --- PHASE 1.3: MEMORY MEASUREMENT ---
         PROCESS_MEMORY_COUNTERS pmc;
         if (GetProcessMemoryInfo(pi.hProcess, &pmc, sizeof(pmc))) {
             result.peakMemoryKb = pmc.PeakWorkingSetSize / 1024;
@@ -92,14 +128,13 @@ ProcessResult executeAndMeasure(const string& command) {
     return result;
 }
 
+
 string escapeJsonString(const string& input) {
     string output;
     for (char c : input) {
         switch (c) {
         case '\"': output += "\\\""; break;
         case '\\': output += "\\\\"; break;
-        case '\b': output += "\\b";  break;
-        case '\f': output += "\\f";  break;
         case '\n': output += "\\n";  break;
         case '\r': output += "\\r";  break;
         case '\t': output += "\\t";  break;
@@ -110,40 +145,37 @@ string escapeJsonString(const string& input) {
 }
 
 int main() {
-    // RAM yiyecek 40MB'lik test kodu
+    // TEST: Infinite loop to trigger timeout
     string sampleUserCode =
         "#include <iostream>\n"
-        "#include <vector>\n"
         "using namespace std;\n"
         "int main() {\n"
-        "    vector<int> bigArray(10000000, 42);\n"
-        "    long long sum = 0;\n"
-        "    for(int num : bigArray) sum += num;\n"
-        "    cout << \"Calculation Complete, Sum: \" << sum << endl;\n"
+        "    cout << \"Loop starting...\" << endl;\n"
+        "    while(true) {} \n"
         "    return 0;\n"
         "}\n";
 
-    string sourceFile = "temp_code.cpp";
-
-    if (!writeCodeToFile(sourceFile, sampleUserCode)) {
-        cout << "{\n  \"status\": \"error\",\n  \"message\": \"Failed to write source file\"\n}" << endl;
-        return 1;
+    if (!isCodeSafe(sampleUserCode)) {
+        cout << "{\n  \"status\": \"error\",\n  \"message\": \"Security Violation detected!\"\n}" << endl;
+        return 0;
     }
+
+    string sourceFile = "temp_code.cpp";
+    writeCodeToFile(sourceFile, sampleUserCode);
 
     vector<string> optLevels = { "-O0", "-O1", "-O2", "-O3" };
     vector<OptimizationResult> results;
 
     string finalStdout = "";
-    int finalExitCode = 0;
+    DWORD finalExitCode = 0;
 
     for (const string& opt : optLevels) {
         OptimizationResult res;
         res.level = opt;
-
         string exeFile = "temp_" + opt.substr(1) + ".exe";
         string compileCommand = "g++ " + opt + " " + sourceFile + " -o " + exeFile;
 
-        ProcessResult compRes = executeAndMeasure(compileCommand);
+        ProcessResult compRes = executeAndMeasure(compileCommand, INFINITE);
         res.compileTimeMs = compRes.runTimeMs;
 
         if (compRes.exitCode != 0) {
@@ -153,24 +185,30 @@ int main() {
             continue;
         }
 
-        ProcessResult runRes = executeAndMeasure(exeFile);
+        // Running user code with a 5-second (5000ms) safety limit
+        ProcessResult runRes = executeAndMeasure(exeFile, 5000);
         res.runTimeMs = runRes.runTimeMs;
-        res.peakMemoryKb = runRes.peakMemoryKb; // YENI
-        res.success = true;
-        res.errorMessage = "";
+        res.peakMemoryKb = runRes.peakMemoryKb;
 
-        if (opt == "-O0") {
-            finalStdout = runRes.output;
-            finalExitCode = runRes.exitCode;
+        if (runRes.isTimeout) {
+            res.success = false;
+            res.errorMessage = "Time Limit Exceeded (>5000 ms)";
         }
-
+        else {
+            res.success = true;
+            res.errorMessage = "";
+            if (opt == "-O0") {
+                finalStdout = runRes.output;
+                finalExitCode = runRes.exitCode;
+            }
+        }
         results.push_back(res);
     }
 
+    // Print JSON Output
     cout << "{\n";
     cout << "  \"status\": \"success\",\n";
     cout << "  \"optimizations\": [\n";
-
     for (size_t i = 0; i < results.size(); ++i) {
         cout << "    {\n";
         cout << "      \"level\": \"" << results[i].level << "\",\n";
@@ -187,10 +225,8 @@ int main() {
         }
         cout << "    }" << (i == results.size() - 1 ? "" : ",") << "\n";
     }
-
     cout << "  ],\n";
     cout << "  \"stdout\": \"" << escapeJsonString(finalStdout) << "\",\n";
-    cout << "  \"stderr\": \"\",\n";
     cout << "  \"exit_code\": " << finalExitCode << "\n";
     cout << "}\n";
 
