@@ -1,17 +1,26 @@
+#define _WIN32_WINNT 0x0A00 // Tell compiler we are on Windows 10 or later
 #include <iostream>
 #include <fstream>
 #include <string>
 #include <vector>
 #include <chrono>
+
+// External libraries
+#include "httplib.h"
+#include "json.hpp"
+
+// Windows System headers
 #include <windows.h>
 #include <psapi.h>
 
 using namespace std;
 using namespace std::chrono;
+using json = nlohmann::json;
 
+// --- DATA STRUCTURES ---
 struct ProcessResult {
     string output;
-    DWORD exitCode; // ERROR FIX: Changed int to DWORD for Windows API compatibility
+    DWORD exitCode;
     long long runTimeMs;
     SIZE_T peakMemoryKb;
     bool isTimeout;
@@ -26,27 +35,19 @@ struct OptimizationResult {
     string errorMessage;
 };
 
-// Phase 1.4: Security Blacklist
+// --- SECURITY SANDBOX (Phase 1.4) ---
 bool isCodeSafe(const string& code) {
+    // List of forbidden function calls
     vector<string> blacklist = {
         "system(", "exec(", "_popen", "CreateProcess", "ShellExecute", "remove(", "rename("
     };
-    for (const string& badWord : blacklist) {
-        if (code.find(badWord) != string::npos) {
-            return false;
-        }
+    for (const string& keyword : blacklist) {
+        if (code.find(keyword) != string::npos) return false;
     }
     return true;
 }
 
-bool writeCodeToFile(const string& filename, const string& code) {
-    ofstream file(filename);
-    if (!file.is_open()) return false;
-    file << code;
-    file.close();
-    return true;
-}
-
+// --- CORE EXECUTION ENGINE (Phase 1.3 & 1.4) ---
 ProcessResult executeAndMeasure(const string& command, DWORD timeoutMs = INFINITE) {
     ProcessResult result = { "", 0, 0, 0, false };
 
@@ -64,17 +65,16 @@ ProcessResult executeAndMeasure(const string& command, DWORD timeoutMs = INFINIT
     char cmd[512];
     strncpy(cmd, command.c_str(), sizeof(cmd));
 
-    auto start = high_resolution_clock::now();
+    auto startTime = high_resolution_clock::now();
 
     if (CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
         CloseHandle(hWritePipe);
 
-        bool running = true;
-        while (running) {
-            // 1. Boruda veri var mý diye kontrol et (Peek)
+        bool isRunning = true;
+        while (isRunning) {
+            // Check if there is data in the pipe without blocking
             DWORD bytesAvailable = 0;
             PeekNamedPipe(hReadPipe, NULL, 0, NULL, &bytesAvailable, NULL);
-
             if (bytesAvailable > 0) {
                 char buffer[4096];
                 DWORD bytesRead;
@@ -84,34 +84,23 @@ ProcessResult executeAndMeasure(const string& command, DWORD timeoutMs = INFINIT
                 }
             }
 
-            // 2. Süre doldu mu kontrol et
-            auto now = high_resolution_clock::now();
-            long long elapsed = duration_cast<milliseconds>(now - start).count();
-
-            if (timeoutMs != INFINITE && elapsed > timeoutMs) {
+            // Check for timeout
+            auto currentTime = high_resolution_clock::now();
+            if (timeoutMs != INFINITE && duration_cast<milliseconds>(currentTime - startTime).count() > timeoutMs) {
                 TerminateProcess(pi.hProcess, 1);
                 result.isTimeout = true;
-                result.exitCode = -1;
-                running = false;
+                isRunning = false;
             }
 
-            // 3. Program bitti mi kontrol et
-            DWORD waitStatus = WaitForSingleObject(pi.hProcess, 0); // 0 yazarak "bekleme, sadece bak" diyoruz
-            if (waitStatus != WAIT_TIMEOUT) {
-                running = false;
-            }
-
-            // Ýþlemciyi yormamak için çok kýsa uyu
+            // Check if process has exited
+            if (WaitForSingleObject(pi.hProcess, 0) != WAIT_TIMEOUT) isRunning = false;
             Sleep(10);
         }
 
-        if (!result.isTimeout) {
-            GetExitCodeProcess(pi.hProcess, &result.exitCode);
-        }
+        if (!result.isTimeout) GetExitCodeProcess(pi.hProcess, &result.exitCode);
+        result.runTimeMs = duration_cast<milliseconds>(high_resolution_clock::now() - startTime).count();
 
-        auto end = high_resolution_clock::now();
-        result.runTimeMs = duration_cast<milliseconds>(end - start).count();
-
+        // Measure Peak Memory Usage
         PROCESS_MEMORY_COUNTERS pmc;
         if (GetProcessMemoryInfo(pi.hProcess, &pmc, sizeof(pmc))) {
             result.peakMemoryKb = pmc.PeakWorkingSetSize / 1024;
@@ -128,107 +117,94 @@ ProcessResult executeAndMeasure(const string& command, DWORD timeoutMs = INFINIT
     return result;
 }
 
+// --- ANALYSIS LOGIC ---
+json analyzeCode(const string& userSourceCode) {
+    json response;
 
-string escapeJsonString(const string& input) {
-    string output;
-    for (char c : input) {
-        switch (c) {
-        case '\"': output += "\\\""; break;
-        case '\\': output += "\\\\"; break;
-        case '\n': output += "\\n";  break;
-        case '\r': output += "\\r";  break;
-        case '\t': output += "\\t";  break;
-        default:   output += c;      break;
-        }
-    }
-    return output;
-}
-
-int main() {
-    // TEST: Infinite loop to trigger timeout
-    string sampleUserCode =
-        "#include <iostream>\n"
-        "using namespace std;\n"
-        "int main() {\n"
-        "    cout << \"Loop starting...\" << endl;\n"
-        "    while(true) {} \n"
-        "    return 0;\n"
-        "}\n";
-
-    if (!isCodeSafe(sampleUserCode)) {
-        cout << "{\n  \"status\": \"error\",\n  \"message\": \"Security Violation detected!\"\n}" << endl;
-        return 0;
+    // 1. Security Check
+    if (!isCodeSafe(userSourceCode)) {
+        response["status"] = "error";
+        response["message"] = "Security Violation: Dangerous functions detected!";
+        return response;
     }
 
-    string sourceFile = "temp_code.cpp";
-    writeCodeToFile(sourceFile, sampleUserCode);
+    // 2. Write source to temporary file
+    ofstream file("temp_code.cpp");
+    file << userSourceCode;
+    file.close();
 
-    vector<string> optLevels = { "-O0", "-O1", "-O2", "-O3" };
-    vector<OptimizationResult> results;
+    vector<string> optimizationLevels = { "-O0", "-O1", "-O2", "-O3" };
+    string capturedStdout = "";
 
-    string finalStdout = "";
-    DWORD finalExitCode = 0;
+    for (const string& level : optimizationLevels) {
+        json levelData;
+        levelData["level"] = level;
 
-    for (const string& opt : optLevels) {
-        OptimizationResult res;
-        res.level = opt;
-        string exeFile = "temp_" + opt.substr(1) + ".exe";
-        string compileCommand = "g++ " + opt + " " + sourceFile + " -o " + exeFile;
+        string binaryFile = "temp_" + level.substr(1) + ".exe";
+        string compileCmd = "g++ " + level + " temp_code.cpp -o " + binaryFile;
 
-        ProcessResult compRes = executeAndMeasure(compileCommand, INFINITE);
-        res.compileTimeMs = compRes.runTimeMs;
+        ProcessResult compilationResult = executeAndMeasure(compileCmd, INFINITE);
+        levelData["compile_time_ms"] = compilationResult.runTimeMs;
 
-        if (compRes.exitCode != 0) {
-            res.success = false;
-            res.errorMessage = compRes.output;
-            results.push_back(res);
+        if (compilationResult.exitCode != 0) {
+            levelData["status"] = "error";
+            levelData["error_message"] = compilationResult.output;
+            response["optimizations"].push_back(levelData);
             continue;
         }
 
-        // Running user code with a 5-second (5000ms) safety limit
-        ProcessResult runRes = executeAndMeasure(exeFile, 5000);
-        res.runTimeMs = runRes.runTimeMs;
-        res.peakMemoryKb = runRes.peakMemoryKb;
+        ProcessResult executionResult = executeAndMeasure(binaryFile, 5000);
+        levelData["run_time_ms"] = executionResult.runTimeMs;
+        levelData["memory_kb"] = executionResult.peakMemoryKb;
 
-        if (runRes.isTimeout) {
-            res.success = false;
-            res.errorMessage = "Time Limit Exceeded (>5000 ms)";
+        if (executionResult.isTimeout) {
+            levelData["status"] = "error";
+            levelData["error_message"] = "Time Limit Exceeded";
         }
         else {
-            res.success = true;
-            res.errorMessage = "";
-            if (opt == "-O0") {
-                finalStdout = runRes.output;
-                finalExitCode = runRes.exitCode;
-            }
+            levelData["status"] = "success";
+            if (level == "-O0") capturedStdout = executionResult.output;
         }
-        results.push_back(res);
+        response["optimizations"].push_back(levelData);
     }
 
-    // Print JSON Output
-    cout << "{\n";
-    cout << "  \"status\": \"success\",\n";
-    cout << "  \"optimizations\": [\n";
-    for (size_t i = 0; i < results.size(); ++i) {
-        cout << "    {\n";
-        cout << "      \"level\": \"" << results[i].level << "\",\n";
-        if (results[i].success) {
-            cout << "      \"status\": \"success\",\n";
-            cout << "      \"compile_time_ms\": " << results[i].compileTimeMs << ",\n";
-            cout << "      \"run_time_ms\": " << results[i].runTimeMs << ",\n";
-            cout << "      \"memory_kb\": " << results[i].peakMemoryKb << "\n";
+    response["status"] = "success";
+    response["stdout"] = capturedStdout;
+    return response;
+}
+
+// --- WEB SERVER ENTRY POINT ---
+int main() {
+    httplib::Server httpServer;
+
+    // Endpoint 1: Health Check
+    httpServer.Get("/health", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content("C++ Engine is operational!", "text/plain");
+        });
+
+    // Endpoint 2: Code Analysis (Core Logic)
+    httpServer.Post("/analyze", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            // Parse incoming JSON body
+            auto requestBody = json::parse(req.body);
+            string source = requestBody["code"];
+
+            cout << ">> Incoming analysis request processed." << endl;
+
+            // Execute analysis
+            json analysisResult = analyzeCode(source);
+
+            // Return result as JSON
+            res.set_content(analysisResult.dump(), "application/json");
         }
-        else {
-            cout << "      \"status\": \"error\",\n";
-            cout << "      \"compile_time_ms\": " << results[i].compileTimeMs << ",\n";
-            cout << "      \"error_message\": \"" << escapeJsonString(results[i].errorMessage) << "\"\n";
+        catch (...) {
+            res.status = 400;
+            res.set_content("{\"status\":\"error\",\"message\":\"Invalid JSON format\"}", "application/json");
         }
-        cout << "    }" << (i == results.size() - 1 ? "" : ",") << "\n";
-    }
-    cout << "  ],\n";
-    cout << "  \"stdout\": \"" << escapeJsonString(finalStdout) << "\",\n";
-    cout << "  \"exit_code\": " << finalExitCode << "\n";
-    cout << "}\n";
+        });
+
+    cout << ">> C++ Engine HTTP Server is listening on http://localhost:8080" << endl;
+    httpServer.listen("0.0.0.0", 8080);
 
     return 0;
 }
