@@ -55,6 +55,22 @@ Tarayıcıda `http://localhost:3000` adresini aç.
 | Backend API | http://localhost:8000 |
 | C++ Engine | http://localhost:8080 |
 
+### Geliştirme ve Test Süreci
+
+Projeyi lokalde test etmek için aşağıdaki adımları izleyebilirsiniz:
+
+1. **C++ Motorunu Başlatma:**
+   - **Gerçek Motor:** `engine/` klasöründeki C++ projesini Visual Studio ile derleyip çalıştırın.
+   - **Mock Motor (Hızlı Test):** Eğer C++ derleyiciniz yüklü değilse, `engine/` klasöründe `python mock_engine.py` komutunu çalıştırarak motoru simüle edebilirsiniz. (Bu yöntem sadece backend ve frontend testleri için kolaylık sağlar).
+
+2. **Backend'i Başlatma:**
+   - `backend/` klasöründe `pip install -r requirements.txt` ile bağımlılıkları kurun.
+   - `python main.py` ile sunucuyu başlatın.
+   - API dökümantasyonu için `http://localhost:8000/docs` (Swagger UI) adresini kullanın.
+
+3. **Veritabanı:**
+   - Sistem varsayılan olarak yerel bir SQLite (`cpp_analyzer.db`) dosyası kullanır.
+
 ### Proje Yapısı
 
 ```
@@ -189,6 +205,22 @@ Open `http://localhost:3000` in your browser.
 | Frontend | http://localhost:3000 |
 | Backend API | http://localhost:8000 |
 | C++ Engine | http://localhost:8080 |
+
+### Development and Testing Process
+
+Follow these steps to test the project locally:
+
+1. **Start C++ Engine:**
+   - **Real Engine:** Compile and run the C++ project in the `engine/` folder using Visual Studio.
+   - **Mock Engine (Quick Test):** If you don't have a C++ compiler setup, you can run `python mock_engine.py` in the `engine/` folder to simulate the engine (useful for backend/frontend testing).
+
+2. **Start Backend:**
+   - Install dependencies in the `backend/` folder using `pip install -r requirements.txt`.
+   - Start the server with `python main.py`.
+   - Access API documentation at `http://localhost:8000/docs` (Swagger UI).
+
+3. **Database:**
+   - By default, the system uses a local SQLite (`cpp_analyzer.db`) file for storage.
 
 ### Project Structure
 
