@@ -6,7 +6,7 @@ import Footer from './components/Footer';
  * Page Components (Placeholders for now)
  */
 import Home from './pages/Home';
-const Result = () => <div className="container"><h1>Analysis Results</h1></div>;
+import Result from './pages/Result';
 const Examples = () => <div className="container"><h1>C++ Code Examples</h1></div>;
 const About = () => <div className="container"><h1>About the Project</h1></div>;
 const Privacy = () => <div className="container"><h1>Privacy Policy</h1></div>;
