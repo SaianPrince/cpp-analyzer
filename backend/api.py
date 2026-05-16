@@ -81,7 +81,7 @@ async def analyze_code(request: AnalyzeRequest, fastapi_req: Request, db: AsyncS
     result = await db.execute(stmt)
     count = result.scalar()
     
-    if count >= 20: # Test icin gecici olarak 2'ye dusuruldu (Normalde 20)
+    if count >= 1000: # Test icin gecici olarak 2'ye dusuruldu (Normalde 20)
         raise HTTPException(status_code=429, detail="Günlük analiz sınırına ulaştınız (20/gün).")
 
     # 1. Generate rule-based suggestions (Phase 2.3)
@@ -144,4 +144,28 @@ async def analyze_code(request: AnalyzeRequest, fastapi_req: Request, db: AsyncS
         engine_result=engine_result,
         suggestions=suggestions,
         id=analysis_id
+    )
+
+@router.get("/result/{analysis_id}", response_model=AnalyzeResponse)
+async def get_analysis_result(analysis_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Belirli bir analiz sonucunu ID ile veritabanından getirir.
+    """
+    stmt = select(models.Analysis).where(models.Analysis.id == analysis_id)
+    result = await db.execute(stmt)
+    db_analysis = result.scalar_one_or_none()
+    
+    if not db_analysis:
+        raise HTTPException(status_code=404, detail="Analiz bulunamadı.")
+    
+    return AnalyzeResponse(
+        status="success",
+        engine_result=EngineResponse(
+            status=db_analysis.status,
+            message=None,
+            stdout=db_analysis.stdout,
+            optimizations=db_analysis.optimizations
+        ),
+        suggestions=[Suggestion(**s) for s in db_analysis.suggestions],
+        id=db_analysis.id
     )

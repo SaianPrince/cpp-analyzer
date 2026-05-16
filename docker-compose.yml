@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: cpp-analyzer-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: cpp_analyzer
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  engine:
+    build: ./engine
+    container_name: cpp-analyzer-engine
+    ports:
+      - "8080:8080"
+
+  backend:
+    build: ./backend
+    container_name: cpp-analyzer-backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/cpp_analyzer
+      - ENGINE_URL=http://engine:8080
+      - CORS_ORIGINS=["http://localhost:3000"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - engine
+
+  frontend:
+    build: ./frontend
+    container_name: cpp-analyzer-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

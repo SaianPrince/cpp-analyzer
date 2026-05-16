@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, ShieldCheck, Zap } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Play, ShieldCheck, Zap, Loader2 } from 'lucide-react';
 
 const Home = () => {
   const [code, setCode] = useState('// Write your C++ code here...\n#include <iostream>\n\nint main() {\n    std::cout << "Hello Performance!" << std::endl;\n    return 0;\n}');
@@ -12,9 +13,33 @@ const Home = () => {
     }
   };
 
-  const handleAnalyze = () => {
-    console.log("Analyzing code:", code);
-    // Phase 3.3: This will trigger the API call to Python backend
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+
+  const handleAnalyze = async () => {
+    if (!code.trim()) return;
+    
+    setLoading(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      
+      const data = await response.json();
+      if (response.ok) {
+        // Redirect to result page with the analysis ID
+        navigate(`/result/${data.id}`);
+      } else {
+        alert(data.detail || "Analysis failed");
+      }
+    } catch (error) {
+      console.error("Connection Error:", error);
+      alert("Could not connect to the backend server.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -60,9 +85,13 @@ const Home = () => {
           <div className="editor-stats">
             {code.split('\n').length} / 500 lines
           </div>
-          <button className="btn-analyze" onClick={handleAnalyze}>
-            <Zap size={18} />
-            <span>Analyze Performance</span>
+          <button 
+            className="btn-analyze" 
+            onClick={handleAnalyze}
+            disabled={loading}
+          >
+            {loading ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
+            <span>{loading ? "Analyzing..." : "Analyze Performance"}</span>
           </button>
         </div>
       </section>

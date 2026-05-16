@@ -2,16 +2,42 @@ import { useParams, Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { HardDrive, Terminal, ArrowLeft, CheckCircle2, Zap } from 'lucide-react';
 
+import { useState, useEffect } from 'react';
+
 const Result = () => {
   const { id } = useParams();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // MOCK DATA - Phase 3.3 (We will replace this with real API data in the next phase)
-  const performanceData = [
-    { name: '-O0', time: 1250, color: '#94a3b8' },
-    { name: '-O1', time: 820, color: '#8b5cf6' },
-    { name: '-O2', time: 450, color: '#06b6d4' },
-    { name: '-O3', time: 310, color: '#10b981' },
-  ];
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch(`http://localhost:8000/api/result/${id}`);
+        if (response.ok) {
+          const result = await response.json();
+          setData(result);
+        }
+      } catch (error) {
+        console.error("Error fetching result:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [id]);
+
+  if (loading) return <div className="result-container"><h1>Loading analysis...</h1></div>;
+  if (!data) return <div className="result-container"><h1>Analysis not found.</h1></div>;
+
+  const performanceData = data.engine_result.optimizations.map(opt => ({
+    name: opt.level,
+    time: opt.run_time_ms,
+    color: opt.level === '-O3' ? '#10b981' : opt.level === '-O0' ? '#94a3b8' : '#8b5cf6'
+  }));
+
+  const peakMemory = data.engine_result.optimizations.length > 0 
+    ? Math.max(...data.engine_result.optimizations.map(o => o.memory_kb)) 
+    : 0;
 
   return (
     <div className="result-container animate-fade-in">
@@ -58,12 +84,12 @@ const Result = () => {
           
           <div className="memory-stats-container">
             <div className="memory-value-display">
-              <span className="big-value">1,420</span>
+              <span className="big-value">{peakMemory.toLocaleString()}</span>
               <span className="unit">KB</span>
             </div>
             
             <div className="memory-progress-bg">
-              <div className="memory-progress-fill" style={{ width: '65%' }}></div>
+              <div className="memory-progress-fill" style={{ width: `${Math.min(100, (peakMemory / 10240) * 100)}%` }}></div>
             </div>
             
             <p className="memory-status-text">
@@ -71,10 +97,21 @@ const Result = () => {
             </p>
           </div>
 
-          <div className="suggestion-item glass" style={{marginTop: '20px', padding: '15px'}}>
-            <CheckCircle2 size={16} className="text-green" />
-            <span style={{fontSize: '0.9rem'}}>Minimal memory footprint. No leaks detected.</span>
-          </div>
+          {data.suggestions.map((suggestion, index) => (
+            <div key={index} className="suggestion-item glass" style={{marginTop: '10px', padding: '15px'}}>
+              <CheckCircle2 size={16} className={suggestion.severity === 'high' ? "text-red" : "text-green"} />
+              <div style={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
+                <strong style={{fontSize: '0.9rem'}}>{suggestion.title}</strong>
+                <span style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>{suggestion.detail}</span>
+              </div>
+            </div>
+          ))}
+          {data.suggestions.length === 0 && (
+            <div className="suggestion-item glass" style={{marginTop: '10px', padding: '15px'}}>
+              <CheckCircle2 size={16} className="text-green" />
+              <span style={{fontSize: '0.9rem'}}>No major issues detected. Your code looks optimized!</span>
+            </div>
+          )}
         </div>
 
         {/* Bottom Card: Output Log */}
@@ -84,12 +121,10 @@ const Result = () => {
             <h3>Standard Output (stdout)</h3>
           </div>
           <div className="terminal-box">
-            <code>
-              {">"} Initializing analysis...<br/>
-              {">"} Optimization pass completed.<br/>
-              {">"} Final result: 42.55 (Matched expected output)<br/>
-              {">"} Process finished with exit code 0.
-            </code>
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+              {data.engine_result.stdout || "No output generated."}
+              {"\n> Process finished with status: " + data.engine_result.status}
+            </pre>
           </div>
         </div>
       </div>
