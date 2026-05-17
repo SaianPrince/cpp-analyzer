@@ -1,7 +1,8 @@
-FROM gcc:latest
+FROM python:3.11-slim
 WORKDIR /app
-COPY . .
-# On Linux, we need -lpthread for cpp-httplib
-RUN g++ main.cpp -o engine -O3 -lpthread
+COPY mock_engine.py .
+RUN pip install fastapi uvicorn
+# Install g++ so the mock engine can compile C++ code
+RUN apt-get update && apt-get install -y g++ && rm -rf /var/lib/apt/lists/*
 EXPOSE 8080
-CMD ["./engine"]
+CMD ["python", "mock_engine.py"]
