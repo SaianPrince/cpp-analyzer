@@ -8,7 +8,7 @@ import Footer from './components/Footer';
 import Home from './pages/Home';
 import Result from './pages/Result';
 const Examples = () => <div className="container"><h1>C++ Code Examples</h1></div>;
-const About = () => <div className="container"><h1>About the Project</h1></div>;
+import About from './pages/About';
 const Privacy = () => <div className="container"><h1>Privacy Policy</h1></div>;
 const Contact = () => <div className="container"><h1>Contact Support</h1></div>;
 

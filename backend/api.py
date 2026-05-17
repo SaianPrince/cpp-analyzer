@@ -81,7 +81,7 @@ async def analyze_code(request: AnalyzeRequest, fastapi_req: Request, db: AsyncS
     result = await db.execute(stmt)
     count = result.scalar()
     
-    if count >= 1000: # Test icin gecici olarak 2'ye dusuruldu (Normalde 20)
+    if count >= 20: 
         raise HTTPException(status_code=429, detail="Günlük analiz sınırına ulaştınız (20/gün).")
 
     # 1. Generate rule-based suggestions (Phase 2.3)
@@ -94,7 +94,7 @@ async def analyze_code(request: AnalyzeRequest, fastapi_req: Request, db: AsyncS
             response = await client.post(
                 f"{settings.ENGINE_URL}/analyze",
                 json={"code": request.code},
-                timeout=10.0
+                timeout=30.0
             )
             response.raise_for_status()
             data = response.json()
@@ -114,6 +114,10 @@ async def analyze_code(request: AnalyzeRequest, fastapi_req: Request, db: AsyncS
             stdout="",
             optimizations=[]
         )
+        
+    # If the code failed to compile or time out, don't show performance suggestions
+    if engine_result.status != "success":
+        suggestions = []
         
     # 3. Save to Database (Phase 2.4)
     analysis_id = str(uuid.uuid4())

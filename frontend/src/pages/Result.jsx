@@ -46,7 +46,7 @@ const Result = () => {
           <ArrowLeft size={18} />
           <span>New Analysis</span>
         </Link>
-        <h1>Analysis Result <span className="text-muted">#{id || 'DEMO'}</span></h1>
+        <h1>Analysis Result <span className="text-muted">#{id ? id.substring(0, 8).toUpperCase() : 'DEMO'}</span></h1>
       </div>
 
       <div className="result-grid">
@@ -63,9 +63,21 @@ const Result = () => {
                 <XAxis dataKey="name" stroke="#94a3b8" />
                 <YAxis stroke="#94a3b8" />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#161821', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                  cursor={{ fill: 'transparent' }}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="glass" style={{ padding: '12px 18px', border: `1px solid ${data.color}`, boxShadow: `0 0 15px ${data.color}40`, backgroundColor: 'rgba(10, 11, 16, 0.95)' }}>
+                          <p style={{ margin: 0, color: '#ffffff', textShadow: `0 0 8px ${data.color}`, fontWeight: 'bold', fontSize: '1.2rem' }}>{data.name}</p>
+                          <p style={{ margin: '5px 0 0 0', color: '#e2e8f0', fontSize: '1rem', fontWeight: '500' }}>Execution: {data.time} ms</p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
                 />
-                <Bar dataKey="time">
+                <Bar dataKey="time" className="animated-bar">
                   {performanceData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
@@ -118,12 +130,12 @@ const Result = () => {
         <div className="result-card glass p-24 col-span-2">
           <div className="card-title">
             <Terminal size={20} className="text-muted" />
-            <h3>Standard Output (stdout)</h3>
+            <h3>Standard Output (stdout) / Errors</h3>
           </div>
           <div className="terminal-box">
             <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-              {data.engine_result.stdout || "No output generated."}
-              {"\n> Process finished with status: " + data.engine_result.status}
+              {data.engine_result.stdout || (data.engine_result.optimizations.find(o => o.error_message)?.error_message) || "No output generated."}
+              {"\n> Optimization status: " + (data.engine_result.optimizations[0]?.status || "unknown")}
             </pre>
           </div>
         </div>
