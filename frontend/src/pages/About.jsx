@@ -1,119 +1,166 @@
-import { Cpu, Zap, ShieldCheck, Activity, Layers } from 'lucide-react';
+import { Cpu, Zap, ShieldCheck, Activity, GitBranch, ArrowRight, BarChart3, Clock, Box } from 'lucide-react';
 import { Link } from 'react-router-dom';
+
+const STEPS = [
+  {
+    num: '01',
+    icon: Cpu,
+    color: '#F97316',
+    title: 'Submit Your Code',
+    desc: 'Paste or upload any C++ source file into the Monaco editor. The code is sent to our secure backend over HTTPS.',
+  },
+  {
+    num: '02',
+    icon: GitBranch,
+    color: '#FBBF24',
+    title: 'Parallel Compilation',
+    desc: 'Your code is compiled simultaneously with four optimization flags: -O0 (baseline), -O1, -O2, and -O3 (aggressive).',
+  },
+  {
+    num: '03',
+    icon: Clock,
+    color: '#2563EB',
+    title: 'Sandboxed Execution',
+    desc: 'Each compiled binary runs inside an isolated Docker container. Execution time and memory usage are measured with millisecond precision.',
+  },
+  {
+    num: '04',
+    icon: BarChart3,
+    color: '#16A34A',
+    title: 'Results & Insights',
+    desc: 'You get a visual performance comparison, memory analysis, and rule-based optimization suggestions — all in one view.',
+  },
+];
+
+const FEATURES = [
+  {
+    icon: Zap,
+    color: '#2563EB',
+    title: 'Four Optimization Levels',
+    desc: 'See exactly how -O0, -O1, -O2, and -O3 affect your code. Understand loop unrolling, vectorization, and dead code elimination.',
+  },
+  {
+    icon: Activity,
+    color: '#16A34A',
+    title: 'Real-Time Benchmarking',
+    desc: 'No synthetic estimates — your code actually runs. Wall-clock time and peak RSS memory are measured on each execution.',
+  },
+  {
+    icon: ShieldCheck,
+    color: '#D97706',
+    title: 'Static Analysis Engine',
+    desc: 'Our rule engine detects common pitfalls: global variables, missing reserve() calls, endl overhead, excessive I/O in loops, and more.',
+  },
+  {
+    icon: Box,
+    color: '#8B949E',
+    title: 'Secure Sandbox',
+    desc: 'All code runs in isolated Docker containers with resource limits. Infinite loops are killed via timeout. Your code is never shared.',
+  },
+];
 
 const About = () => {
   return (
-    <div className="container animate-fade-in" style={{ paddingTop: '100px', paddingBottom: '60px' }}>
-      
-      {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: '60px' }}>
-        <h1 style={{ fontSize: '3rem', marginBottom: '15px' }}>
-          C++ Mimarisi ve <span className="text-gradient">CPP Analyzer</span>
-        </h1>
-        <p className="text-muted" style={{ maxWidth: '700px', margin: '0 auto', fontSize: '1.1rem' }}>
-          Dünyanın en güçlü sistem programlama dillerinden biri olan C++'ın derinliklerine inin 
-          ve yazdığınız kodun derleyici tarafından nasıl optimize edildiğini keşfedin.
-        </p>
+    <div className="flex-1 overflow-y-auto bg-bg">
+
+      {/* Hero */}
+      <div style={{ background: 'linear-gradient(180deg, #161B22 0%, #0D1117 100%)', padding: '60px 80px 48px' }}>
+        <div style={{ maxWidth: 700 }}>
+          <div className="flex items-center gap-2 mb-4">
+            <div style={{ width: 32, height: 3, background: '#2563EB', borderRadius: 2 }} />
+            <span style={{ fontSize: 13, color: '#2563EB', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>How It Works</span>
+          </div>
+          <h1 style={{ fontSize: 36, color: '#E6EDF3', fontWeight: 800, lineHeight: 1.2, marginBottom: 16 }}>
+            Understand Your Code's<br />True Performance
+          </h1>
+          <p style={{ fontSize: 16, color: '#8B949E', lineHeight: 1.7, maxWidth: 560 }}>
+            CPP Analyzer compiles your C++ code at four optimization levels, benchmarks each binary in a secure sandbox,
+            and delivers actionable insights — all in under 5 seconds.
+          </p>
+        </div>
       </div>
 
-      <div className="result-grid" style={{ gridTemplateColumns: '1fr', gap: '40px' }}>
-        
-        {/* Section 1: C++ Architecture */}
-        <div className="result-card glass p-24" style={{ padding: '40px' }}>
-          <div className="card-title" style={{ marginBottom: '20px' }}>
-            <Layers size={28} className="icon-purple" />
-            <h2 style={{ fontSize: '1.8rem' }}>C++ Mimarisi ve Çalışma Mantığı</h2>
-          </div>
-          <p style={{ marginBottom: '15px', lineHeight: '1.8', color: 'var(--text-main)' }}>
-            C++, 1979 yılında Bjarne Stroustrup tarafından "C with Classes" (Sınıflı C) adıyla geliştirilmiş, 
-            donanıma en yakın seviyede (Low-Level) çalışabilen, aynı zamanda nesne yönelimli (Object-Oriented) 
-            programlama yetenekleri sunan melez bir dildir.
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginTop: '30px' }}>
-            <div className="glass" style={{ padding: '20px', borderRadius: '10px' }}>
-              <h4 style={{ color: 'var(--accent-secondary)', marginBottom: '10px' }}>Zero-Overhead Abstraction</h4>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                "Kullanmadığın şeyin bedelini ödemezsin." C++'ın temel felsefesidir. Yazdığınız yüksek seviyeli kodlar, 
-                performans kaybı yaşatmadan makine koduna çevrilir.
-              </p>
+      {/* Pipeline Steps */}
+      <div style={{ padding: '48px 80px' }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          {STEPS.map((step) => (
+            <div key={step.num}
+              className="bg-card border border-border rounded-lg p-5 hover:border-text-dark transition-all"
+              style={{ position: 'relative' }}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center justify-center rounded-lg"
+                  style={{ width: 40, height: 40, background: `${step.color}15`, border: `1px solid ${step.color}30` }}>
+                  <step.icon className="w-5 h-5" style={{ color: step.color }} />
+                </div>
+                <span className="font-mono" style={{ fontSize: 28, fontWeight: 800, color: '#30363D' }}>{step.num}</span>
+              </div>
+              <h3 style={{ fontSize: 16, color: '#E6EDF3', fontWeight: 700, marginBottom: 8 }}>{step.title}</h3>
+              <p style={{ fontSize: 14, color: '#8B949E', lineHeight: 1.6 }}>{step.desc}</p>
             </div>
-            <div className="glass" style={{ padding: '20px', borderRadius: '10px' }}>
-              <h4 style={{ color: 'var(--accent-secondary)', marginBottom: '10px' }}>Derlemeli (Compiled) Dil</h4>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                Python veya JavaScript gibi yorumlanmaz (Interpreted). GCC veya Clang gibi derleyiciler kodu doğrudan 
-                işlemcinin (CPU) anladığı 0 ve 1'lere (Makine Kodu) dönüştürür.
-              </p>
-            </div>
-            <div className="glass" style={{ padding: '20px', borderRadius: '10px' }}>
-              <h4 style={{ color: 'var(--accent-secondary)', marginBottom: '10px' }}>Manuel Bellek Yönetimi</h4>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                Garbage Collector yoktur. Geliştirici, RAM üzerindeki bellek tahsisini (Pointers, new/delete, Smart Pointers) 
-                kendisi yönetir, bu da ona sınırsız güç ve sorumluluk verir.
-              </p>
-            </div>
-          </div>
+          ))}
         </div>
+      </div>
 
-        {/* Section 2: How our site connects to C++ */}
-        <div className="result-card glass p-24" style={{ padding: '40px' }}>
-          <div className="card-title" style={{ marginBottom: '20px' }}>
-            <Zap size={28} className="icon-cyan" />
-            <h2 style={{ fontSize: '1.8rem' }}>CPP Analyzer Ne İşe Yarar?</h2>
-          </div>
-          <p style={{ marginBottom: '20px', lineHeight: '1.8', color: 'var(--text-main)' }}>
-            C++ donanım üzerinde çok hızlı çalışsa da, bu hızı sağlayan asıl kahraman <strong>Derleyici Optimizasyonlarıdır (Compiler Optimizations)</strong>. 
-            Aynı C++ kodu, farklı derleme bayraklarıyla (flags) tamamen farklı performans sergiler. İşte <strong>CPP Analyzer</strong> tam olarak 
-            bu farkı sizin için şeffaf hale getirir.
-          </p>
-          
-          <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <li style={{ display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
-              <div style={{ background: 'rgba(139, 92, 246, 0.2)', padding: '10px', borderRadius: '8px' }}>
-                <Cpu size={20} className="icon-purple" />
+      {/* Divider */}
+      <div style={{ padding: '0 80px' }}>
+        <div style={{ height: 1, background: '#30363D' }} />
+      </div>
+
+      {/* Features Grid */}
+      <div style={{ padding: '48px 80px' }}>
+        <div className="flex items-center gap-2 mb-3">
+          <div style={{ width: 32, height: 3, background: '#16A34A', borderRadius: 2 }} />
+          <span style={{ fontSize: 13, color: '#16A34A', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Capabilities</span>
+        </div>
+        <h2 style={{ fontSize: 26, color: '#E6EDF3', fontWeight: 800, marginBottom: 8 }}>Built for C++ Developers</h2>
+        <p style={{ fontSize: 15, color: '#8B949E', marginBottom: 32, maxWidth: 500 }}>
+          Whether you're optimizing game engines, embedded systems, or competitive programming solutions.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {FEATURES.map((feat) => (
+            <div key={feat.title} className="bg-card border border-border rounded-lg p-5 flex gap-4 hover:border-text-dark transition-all">
+              <div className="flex-shrink-0 flex items-center justify-center rounded-lg"
+                style={{ width: 44, height: 44, background: `${feat.color}12`, border: `1px solid ${feat.color}25` }}>
+                <feat.icon className="w-5 h-5" style={{ color: feat.color }} />
               </div>
               <div>
-                <strong>4 Farklı Evrende Eşzamanlı Derleme:</strong>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '5px' }}>
-                  Yazdığınız kod arka planda G++ derleyicisine gönderilir ve eşzamanlı olarak 4 farklı bayrakla (-O0, -O1, -O2, -O3) derlenir. 
-                  -O0 (sıfır optimizasyon) kodun saf haliyken, -O3 derleyicinin kodu en agresif şekilde makine koduna göre yeniden yapılandırdığı (vektörizasyon, loop unrolling) versiyondur.
-                </p>
+                <h3 style={{ fontSize: 16, color: '#E6EDF3', fontWeight: 700, marginBottom: 6 }}>{feat.title}</h3>
+                <p style={{ fontSize: 14, color: '#8B949E', lineHeight: 1.6 }}>{feat.desc}</p>
               </div>
-            </li>
-            <li style={{ display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
-              <div style={{ background: 'rgba(6, 182, 212, 0.2)', padding: '10px', borderRadius: '8px' }}>
-                <Activity size={20} className="icon-cyan" />
-              </div>
-              <div>
-                <strong>Gerçek Zamanlı Benchmarking:</strong>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '5px' }}>
-                  Oluşturulan .exe/.elf dosyaları izole bir sistemde saniyenin binde biri (milisaniye) hassasiyetinde yarıştırılır ve 
-                  hangi optimizasyonun hızı ne kadar artırdığı grafiğe dökülür.
-                </p>
-              </div>
-            </li>
-            <li style={{ display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
-              <div style={{ background: 'rgba(16, 185, 129, 0.2)', padding: '10px', borderRadius: '8px' }}>
-                <ShieldCheck size={20} style={{ color: '#10b981' }} />
-              </div>
-              <div>
-                <strong>Güvenlik ve Statik Analiz:</strong>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '5px' }}>
-                  Sonsuz döngüler Timeout ile kesilir. Ayrıca kodunuz derlenirken "endl yerine \n kullanın" gibi statik bellek yönetimi 
-                  tavsiyeleri yapay algoritmalar tarafından tespit edilip size raporlanır.
-                </p>
-              </div>
-            </li>
-          </ul>
+            </div>
+          ))}
         </div>
+      </div>
 
-        {/* Call to Action */}
-        <div style={{ textAlign: 'center', marginTop: '20px' }}>
-          <h3 style={{ marginBottom: '20px' }}>Derleyicinin gücünü test etmeye hazır mısın?</h3>
-          <Link to="/" className="btn-primary" style={{ textDecoration: 'none', display: 'inline-flex', padding: '15px 30px', fontSize: '1.1rem' }}>
-            Kodunu Analiz Et
-          </Link>
+      {/* Tech Stack Bar */}
+      <div style={{ padding: '0 80px 48px' }}>
+        <div className="bg-card border border-border rounded-lg p-5">
+          <h3 style={{ fontSize: 14, color: '#8B949E', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 16 }}>Technology Stack</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Compiler', value: 'GCC 13.2 (g++)' },
+              { label: 'Backend', value: 'Python / FastAPI' },
+              { label: 'Engine', value: 'C++ / Docker' },
+              { label: 'Frontend', value: 'React / Vite' },
+            ].map((item) => (
+              <div key={item.label} className="bg-bg border border-border rounded-md p-3">
+                <div style={{ fontSize: 11, color: '#8B949E', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{item.label}</div>
+                <div className="font-mono" style={{ fontSize: 14, color: '#E6EDF3', fontWeight: 600 }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
         </div>
+      </div>
 
+      {/* CTA */}
+      <div style={{ padding: '32px 80px 64px', textAlign: 'center' }}>
+        <h3 style={{ fontSize: 22, color: '#E6EDF3', fontWeight: 700, marginBottom: 16 }}>Ready to benchmark your code?</h3>
+        <Link to="/"
+          className="inline-flex items-center gap-2 hover:opacity-90 transition-opacity"
+          style={{ padding: '12px 28px', background: '#2563EB', color: '#fff', borderRadius: 8, fontSize: 15, fontWeight: 600 }}>
+          Open the Analyzer <ArrowRight className="w-4 h-4" />
+        </Link>
       </div>
     </div>
   );

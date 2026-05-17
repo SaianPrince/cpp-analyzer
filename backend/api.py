@@ -17,50 +17,49 @@ def generate_rule_based_suggestions(code: str) -> list[Suggestion]:
     suggestions = []
     
     # Rule: Global Variables
-    # Very basic check: variable declaration outside of main or other functions
-    # Looking for lines starting with type name at start of string or after newline, not followed by (
     global_var_pattern = r'^(int|double|float|char|long|string)\s+\w+(\s*=\s*.*)?\s*;'
     if re.search(global_var_pattern, code, re.MULTILINE):
         suggestions.append(Suggestion(
-            title="Global Değişken Kullanımı",
-            detail="Global scope'ta değişken tanımı tespit edildi. Değişkenleri fonksiyon parametresi olarak geçirmeyi tercih edin.",
+            title="Global Variable Detected",
+            detail="A variable is declared in the global scope. Prefer passing variables as function parameters for better encapsulation and performance.",
             severity="low"
         ))
 
-    # Rule: Constant calculations inside loops (Simplified regex)
+    # Rule: Constant calculations inside loops
     loop_invariant_pattern = r'(for|while)\s*\(.*\)\s*\{[^}]*=\s*[\d\.\s\+\-\*\/]+;'
     if re.search(loop_invariant_pattern, code):
         suggestions.append(Suggestion(
-            title="Döngü İçi Sabit Hesaplama",
-            detail="Döngü içerisinde sabit bir değer hesaplanıyor gibi görünüyor. Sabit değeri döngünün dışına çıkararak performansı artırabilirsiniz.",
+            title="Loop-Invariant Computation",
+            detail="A constant value appears to be computed inside a loop. Move the calculation outside the loop to improve performance.",
             severity="medium"
         ))
     
-    # Rule: cout count (as per plan: cout sayısı > 5 ise)
+    # Rule: cout count (> 5)
     if code.count("cout") > 5:
         suggestions.append(Suggestion(
-            title="cout Kullanımı",
-            detail="Çok sayıda cout tespit edildi. Performans için cout yerine printf kullanmayı veya çıktıları bir string builder/buffer'da biriktirmeyi düşünebilirsiniz.",
+            title="Excessive cout Usage",
+            detail="Multiple cout calls detected. Consider using printf or batching output with a string buffer for better I/O performance.",
             severity="medium"
         ))
 
     # Rule: endl usage
     if "endl" in code:
         suggestions.append(Suggestion(
-            title="endl Yerine '\\n' Kullanın",
-            detail="std::endl her çağrıldığında buffer'ı boşaltır (flush). Performans için '\\n' tercih edin.",
+            title="Use '\\n' Instead of endl",
+            detail="std::endl flushes the buffer on every call, which is expensive. Use '\\n' for better performance unless you specifically need flushing.",
             severity="medium"
         ))
         
     # Rule: vector::reserve()
     if "push_back" in code and "reserve" not in code:
         suggestions.append(Suggestion(
-            title="vector::reserve() Kullanın",
-            detail="std::vector::push_back kullanıyorsunuz ancak öncesinde reserve() çağrılmamış. Onceden reserve() ile boyut ayırarak yeniden bellek tahsislerini engelleyebilirsiniz.",
+            title="Missing vector::reserve()",
+            detail="push_back is called without a prior reserve(). The vector will reallocate multiple times as it grows. Add reserve() before the loop to pre-allocate memory.",
             severity="medium"
         ))
 
     return suggestions
+
 
 @router.post("/analyze", response_model=AnalyzeResponse, summary="Analyze C++ Code")
 async def analyze_code(request: AnalyzeRequest, fastapi_req: Request, db: AsyncSession = Depends(get_db)):
@@ -81,8 +80,8 @@ async def analyze_code(request: AnalyzeRequest, fastapi_req: Request, db: AsyncS
     result = await db.execute(stmt)
     count = result.scalar()
     
-    if count >= 20: 
-        raise HTTPException(status_code=429, detail="Günlük analiz sınırına ulaştınız (20/gün).")
+    if count >= 100: 
+        raise HTTPException(status_code=429, detail="Daily analysis limit reached (20/day). Please try again tomorrow.")
 
     # 1. Generate rule-based suggestions (Phase 2.3)
     suggestions = generate_rule_based_suggestions(request.code)
@@ -173,3 +172,24 @@ async def get_analysis_result(analysis_id: str, db: AsyncSession = Depends(get_d
         suggestions=[Suggestion(**s) for s in db_analysis.suggestions],
         id=db_analysis.id
     )
+
+@router.get("/history")
+async def get_history(db: AsyncSession = Depends(get_db)):
+    """
+    Son yapılan 5 analizi veritabanından getirir.
+    """
+    stmt = select(models.Analysis).order_by(models.Analysis.created_at.desc()).limit(5)
+    result = await db.execute(stmt)
+    analyses = result.scalars().all()
+    
+    return [
+        {
+            "id": analysis.id,
+            "status": analysis.status,
+            "code": analysis.code,
+            "execTime": f"{max([opt['run_time_ms'] for opt in analysis.optimizations])}ms" if analysis.optimizations else "0ms",
+            "memory": f"{analysis.memory_kb}KB" if analysis.memory_kb else "0KB",
+            "created_at": analysis.created_at.isoformat() if hasattr(analysis, 'created_at') and analysis.created_at else None
+        }
+        for analysis in analyses
+    ]
