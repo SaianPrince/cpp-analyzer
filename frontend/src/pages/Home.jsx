@@ -128,6 +128,7 @@ const Home = () => {
               wordWrap: 'on',
               padding: { top: 12, bottom: 12 },
               lineNumbersMinChars: 4,
+              scrollBeyondLastColumn: 5,
               scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
               renderLineHighlight: 'line',
               lineHighlightBackground: '#388BFD10',
