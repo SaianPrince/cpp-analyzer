@@ -1,9 +1,17 @@
-import { Link, useLocation } from 'react-router-dom';
-import { Zap } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Zap, LogOut, User } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const Navbar = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const isActive = (path) => location.pathname === path;
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   return (
     <header className="h-14 border-b border-border bg-bg-secondary px-6 flex items-center justify-between flex-shrink-0 z-10"
@@ -21,6 +29,8 @@ const Navbar = () => {
           { path: '/examples', label: 'Examples' },
           { path: '/about', label: 'About' },
           { path: '/pricing', label: 'Pricing' },
+          { path: '/privacy', label: 'Privacy' },
+          { path: '/contact', label: 'Contact' },
         ].map(({ path, label }) => (
           <Link
             key={path}
@@ -37,12 +47,45 @@ const Navbar = () => {
       </nav>
 
       <div className="flex items-center gap-3">
-        <button className="px-4 py-1.5 text-sm text-text hover:text-white transition-colors bg-transparent border-none">
-          Sign In
-        </button>
-        <button className="px-4 py-1.5 text-sm bg-accent text-white rounded-md hover:bg-accent-hover transition-colors border-none font-medium">
-          Get Pro
-        </button>
+        {user ? (
+          <>
+            {/* User info */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md"
+              style={{ background: '#161B22', border: '1px solid #30363D' }}>
+              <div className="flex items-center justify-center rounded-full"
+                style={{ width: 24, height: 24, background: '#2563EB20', border: '1px solid #2563EB40' }}>
+                <User className="w-3 h-3" style={{ color: '#2563EB' }} />
+              </div>
+              <span className="text-sm text-text font-medium">{user.username}</span>
+              <span className="text-xs px-1.5 py-0.5 rounded font-semibold uppercase"
+                style={{
+                  fontSize: 10,
+                  color: user.plan === 'pro' ? '#16A34A' : '#D97706',
+                  background: user.plan === 'pro' ? '#16A34A15' : '#D9770615',
+                  border: `1px solid ${user.plan === 'pro' ? '#16A34A30' : '#D9770630'}`,
+                }}>
+                {user.plan}
+              </span>
+            </div>
+            {/* Logout */}
+            <button onClick={handleLogout}
+              className="p-1.5 text-text-muted hover:text-text transition-colors bg-transparent border-none"
+              title="Logout">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </>
+        ) : (
+          <>
+            <Link to="/login"
+              className="px-4 py-1.5 text-sm text-text hover:text-white transition-colors">
+              Sign In
+            </Link>
+            <Link to="/register"
+              className="px-4 py-1.5 text-sm bg-accent text-white rounded-md hover:bg-accent-hover transition-colors font-medium">
+              Get Pro
+            </Link>
+          </>
+        )}
       </div>
     </header>
   );

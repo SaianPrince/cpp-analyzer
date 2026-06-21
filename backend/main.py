@@ -41,8 +41,10 @@ def health_check():
     }
 
 from api import router as analyze_router
+from auth_api import router as auth_router
 
 app.include_router(analyze_router, prefix=settings.API_PREFIX)
+app.include_router(auth_router, prefix=settings.API_PREFIX)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

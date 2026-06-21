@@ -2,23 +2,61 @@ import subprocess
 import time
 import os
 import uuid
+import resource
 from fastapi import FastAPI, Body
 import uvicorn
+
+MEMORY_LIMIT_KB = 262144  # 256MB in KB
 
 app = FastAPI()
 
 def execute_and_measure(cmd, timeout=5):
     start = time.perf_counter()
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, shell=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        memory_exceeded = False
+        peak_mem_kb = 0
+
+        while proc.poll() is None:
+            elapsed = time.perf_counter() - start
+            if elapsed > timeout:
+                proc.kill()
+                return {"output": "Timeout", "exit_code": -1, "time_ms": int(timeout * 1000), "timeout": True}
+
+            # Check memory via /proc on Linux
+            try:
+                with open(f"/proc/{proc.pid}/status", "r") as f:
+                    for line in f:
+                        if line.startswith("VmRSS:"):
+                            mem_kb = int(line.split()[1])
+                            if mem_kb > peak_mem_kb:
+                                peak_mem_kb = mem_kb
+                            if mem_kb > MEMORY_LIMIT_KB:
+                                proc.kill()
+                                memory_exceeded = True
+                            break
+            except (FileNotFoundError, ProcessLookupError):
+                pass
+
+            if memory_exceeded:
+                break
+            time.sleep(0.01)
+
         end = time.perf_counter()
+        stdout, stderr = proc.communicate(timeout=1) if proc.poll() is not None else (b"", b"")
+        output = (stdout or b"").decode(errors="replace") + (stderr or b"").decode(errors="replace")
+
+        if memory_exceeded:
+            return {"output": "Memory Limit Exceeded (256MB)", "exit_code": -1, "time_ms": int((end - start) * 1000), "memory_exceeded": True, "peak_mem_kb": peak_mem_kb}
+
         return {
-            "output": proc.stdout + proc.stderr,
-            "exit_code": proc.returncode,
-            "time_ms": int((end - start) * 1000)
+            "output": output,
+            "exit_code": proc.returncode or 0,
+            "time_ms": int((end - start) * 1000),
+            "peak_mem_kb": peak_mem_kb
         }
-    except subprocess.TimeoutExpired:
-        return {"output": "Timeout", "exit_code": -1, "time_ms": timeout * 1000, "timeout": True}
+    except Exception:
+        return {"output": "Execution error", "exit_code": -1, "time_ms": int((time.perf_counter() - start) * 1000)}
 
 @app.get("/health")
 def health():
@@ -53,7 +91,13 @@ def analyze(payload: dict = Body(...)):
             # Run
             run_res = execute_and_measure(f"./{exe_file}")
             level_data["run_time_ms"] = run_res["time_ms"]
-            level_data["status"] = "success" if not run_res.get("timeout") else "timeout"
+            level_data["memory_kb"] = run_res.get("peak_mem_kb", level_data["memory_kb"])
+            if run_res.get("timeout"):
+                level_data["status"] = "timeout"
+                level_data["error_message"] = "Time Limit Exceeded"
+            elif run_res.get("memory_exceeded"):
+                level_data["status"] = "error"
+                level_data["error_message"] = "Memory Limit Exceeded (256MB)"
             if opt == "-O0":
                 stdout_captured = run_res["output"]
             

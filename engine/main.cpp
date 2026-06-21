@@ -25,6 +25,9 @@ using namespace std;
 using namespace std::chrono;
 using json = nlohmann::json;
 
+// --- CONSTANTS ---
+const long long MEMORY_LIMIT_KB = 262144; // 256MB in KB
+
 // --- DATA STRUCTURES ---
 struct ProcessResult {
     string output;
@@ -32,6 +35,7 @@ struct ProcessResult {
     long long runTimeMs;
     long long peakMemoryKb;
     bool isTimeout;
+    bool isMemoryExceeded;
 };
 
 // --- SECURITY SANDBOX ---
@@ -48,7 +52,7 @@ bool isCodeSafe(const string& code) {
 // --- CORE EXECUTION ENGINE ---
 #ifdef _WIN32
 ProcessResult executeAndMeasure(const string& command, int timeoutMs = -1) {
-    ProcessResult result = { "", 0, 0, 0, false };
+    ProcessResult result = { "", 0, 0, 0, false, false };
     HANDLE hReadPipe, hWritePipe;
     SECURITY_ATTRIBUTES saAttr = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
     if (!CreatePipe(&hReadPipe, &hWritePipe, &saAttr, 0)) return result;
@@ -78,6 +82,17 @@ ProcessResult executeAndMeasure(const string& command, int timeoutMs = -1) {
                     result.output += buffer;
                 }
             }
+            // Memory limit check
+            PROCESS_MEMORY_COUNTERS pmcCheck;
+            if (GetProcessMemoryInfo(pi.hProcess, &pmcCheck, sizeof(pmcCheck))) {
+                long long currentMemKb = pmcCheck.PeakWorkingSetSize / 1024;
+                if (currentMemKb > result.peakMemoryKb) result.peakMemoryKb = currentMemKb;
+                if (currentMemKb > MEMORY_LIMIT_KB) {
+                    TerminateProcess(pi.hProcess, 1);
+                    result.isMemoryExceeded = true;
+                    isRunning = false;
+                }
+            }
             auto currentTime = high_resolution_clock::now();
             if (timeoutMs != -1 && duration_cast<milliseconds>(currentTime - startTime).count() > timeoutMs) {
                 TerminateProcess(pi.hProcess, 1);
@@ -105,7 +120,7 @@ ProcessResult executeAndMeasure(const string& command, int timeoutMs = -1) {
 }
 #else
 ProcessResult executeAndMeasure(const string& command, int timeoutMs = -1) {
-    ProcessResult result = { "", 0, 0, 0, false };
+    ProcessResult result = { "", 0, 0, 0, false, false };
     int pipefd[2];
     if (pipe(pipefd) == -1) return result;
 
@@ -138,6 +153,26 @@ ProcessResult executeAndMeasure(const string& command, int timeoutMs = -1) {
                 isRunning = false;
             }
 
+            // Memory limit check via /proc
+            string procFile = "/proc/" + to_string(pid) + "/status";
+            ifstream procStream(procFile);
+            if (procStream.is_open()) {
+                string line;
+                while (getline(procStream, line)) {
+                    if (line.find("VmPeak:") == 0) {
+                        long long vmPeakKb = 0;
+                        sscanf(line.c_str(), "VmPeak: %lld", &vmPeakKb);
+                        if (vmPeakKb > result.peakMemoryKb) result.peakMemoryKb = vmPeakKb;
+                        if (vmPeakKb > MEMORY_LIMIT_KB) {
+                            kill(pid, SIGKILL);
+                            result.isMemoryExceeded = true;
+                            isRunning = false;
+                        }
+                        break;
+                    }
+                }
+                procStream.close();
+            }
             auto currentTime = high_resolution_clock::now();
             if (timeoutMs != -1 && duration_cast<milliseconds>(currentTime - startTime).count() > timeoutMs) {
                 kill(pid, SIGKILL);
@@ -202,6 +237,9 @@ json analyzeCode(const string& userSourceCode) {
         if (executionResult.isTimeout) {
             levelData["status"] = "error";
             levelData["error_message"] = "Time Limit Exceeded";
+        } else if (executionResult.isMemoryExceeded) {
+            levelData["status"] = "error";
+            levelData["error_message"] = "Memory Limit Exceeded (256MB)";
         } else {
             levelData["status"] = "success";
             if (level == "-O0") capturedStdout = executionResult.output;

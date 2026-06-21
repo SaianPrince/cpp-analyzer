@@ -10,12 +10,21 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   engine:
     build: ./engine
     container_name: cpp-analyzer-engine
     ports:
       - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
 
   backend:
     build: ./backend
@@ -29,6 +38,11 @@ services:
     depends_on:
       - db
       - engine
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
 
   frontend:
     build: ./frontend

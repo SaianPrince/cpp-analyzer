@@ -10,6 +10,7 @@ class Settings:
     API_PREFIX: str = os.getenv("API_PREFIX", "/api")
     ENGINE_URL: str = os.getenv("ENGINE_URL", "http://localhost:8080")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "cpp-analyzer-secret-key-change-in-production")
     
     # Parse CORS_ORIGINS as a list
     _cors_origins_str = os.getenv("CORS_ORIGINS", "[]")

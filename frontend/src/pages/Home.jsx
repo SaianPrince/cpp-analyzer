@@ -122,7 +122,7 @@ const Home = () => {
             options={{
               minimap: { enabled: false },
               fontSize: 14,
-              fontFamily: "'JetBrains Mono', monospace",
+              fontFamily: "Consolas, 'Courier New', monospace",
               cursorStyle: 'line',
               cursorBlinking: 'smooth',
               wordWrap: 'on',
